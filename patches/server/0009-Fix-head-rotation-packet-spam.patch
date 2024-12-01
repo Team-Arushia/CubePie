@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 18:33:00 +0900
+Subject: [PATCH] Fix head rotation packet spam
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index 8ea2f24695f5dad55e21f238b69442513e7a90c6..d03b40524c86a54b984dc2d81179eef070ee3f5f 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -249,10 +249,12 @@ public class ServerEntity {
+                 this.wasRiding = false;
+             }
+ 
+-            i = Mth.floor(this.entity.getYHeadRot() * 256.0F / 360.0F);
+-            if (Math.abs(i - this.lastSentYHeadRot) >= 1) {
+-                this.broadcast.accept(new ClientboundRotateHeadPacket(this.entity, (byte) i));
+-                this.lastSentYHeadRot = i;
++            if(this.entity instanceof LivingEntity) { // SportPaper - Fix head rotation packet spam
++                i = Mth.floor(this.entity.getYHeadRot() * 256.0F / 360.0F);
++                if (Math.abs(i - this.lastSentYHeadRot) >= 1) {
++                    this.broadcast.accept(new ClientboundRotateHeadPacket(this.entity, (byte) i));
++                    this.lastSentYHeadRot = i;
++                }
+             }
+ 
+             this.entity.hasImpulse = false;

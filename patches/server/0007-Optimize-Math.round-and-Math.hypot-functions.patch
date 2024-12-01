@@ -1,0 +1,512 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 18:10:54 +0900
+Subject: [PATCH] Optimize Math.round and Math.hypot functions
+
+
+diff --git a/src/main/java/ca/spottedleaf/dataconverter/minecraft/versions/V3943.java b/src/main/java/ca/spottedleaf/dataconverter/minecraft/versions/V3943.java
+index b769abe8c469b15983b433fb9b7de9f41528a4f9..cdff85f513294bca8c74b10cd37cd21766539b39 100644
+--- a/src/main/java/ca/spottedleaf/dataconverter/minecraft/versions/V3943.java
++++ b/src/main/java/ca/spottedleaf/dataconverter/minecraft/versions/V3943.java
+@@ -4,6 +4,7 @@ import ca.spottedleaf.dataconverter.converters.DataConverter;
+ import ca.spottedleaf.dataconverter.minecraft.MCVersions;
+ import ca.spottedleaf.dataconverter.minecraft.datatypes.MCTypeRegistry;
+ import ca.spottedleaf.dataconverter.types.MapType;
++import carpetfixes.helpers.FastMath;
+ 
+ public final class V3943 {
+ 
+@@ -17,7 +18,7 @@ public final class V3943 {
+ 
+                 int newRange;
+                 try {
+-                    newRange = (int)Math.round(Double.parseDouble(oldRange) * 10.0);
++                    newRange = (int) FastMath.round(Double.parseDouble(oldRange) * 10.0);
+                 } catch (final NumberFormatException ex) {
+                     newRange = 5;
+                 }
+diff --git a/src/main/java/carpetfixes/helpers/FastMath.java b/src/main/java/carpetfixes/helpers/FastMath.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..67cb3b7a76304ee41953bb57791f0cdc63e4f7f3
+--- /dev/null
++++ b/src/main/java/carpetfixes/helpers/FastMath.java
+@@ -0,0 +1,56 @@
++package carpetfixes.helpers;
++
++public class FastMath {
++    private static final double HYPOT_MAX_MAG = 2^511;
++    private static final double HYPOT_FACTOR = 2^750;
++
++    /**
++      * @author FX - PR0CESS
++      * ~1.25x faster than {@link Math#round(float)}
++      */
++    public static int round(float a) {
++        return a > 0F ? (int)(a + .5F) : (int)(a - .5F);
++    }
++
++    /**
++      * @author FX - PR0CESS
++      * ~1.28x faster than {@link Math#round(double)}
++      */
++    public static long round(double a) {
++        return a > 0D ? (long)(a + .5D) : (long)(a - .5D);
++    }
++
++    /**
++      * @author FX - PR0CESS
++      * Hypot implementation from the jafama library. Not 100% accurate! (3E-14%, 15 is perfectly accurate)
++      * ~1.6x faster than {@link Math#hypot(double,double)}
++      */
++    public static double hypot(double x, double y) {
++        x = Math.abs(x);
++        y = Math.abs(y);
++        if (y < x) { // Ensuring x <= y
++            final double a = x;
++            x = y;
++            y = a;
++        } else if (!(y >= x)) { // Testing if we have some NaN
++            return x == Double.POSITIVE_INFINITY ? Double.POSITIVE_INFINITY : Double.NaN;
++        }
++        if (y-x == y) { // x too small to subtract from y
++            return y;
++        } else {
++            double factor;
++            if (y > HYPOT_MAX_MAG) { // y is too large: scaling down
++                x *= (1/HYPOT_FACTOR);
++                y *= (1/HYPOT_FACTOR);
++                factor = HYPOT_FACTOR;
++            } else if (x < (1/HYPOT_MAX_MAG)) { // x is too small: scaling up
++                x *= HYPOT_FACTOR;
++                y *= HYPOT_FACTOR;
++                factor = (1/HYPOT_FACTOR);
++            } else {
++                factor = 1.0;
++            }
++            return factor * Math.sqrt(x*x+y*y);
++        }
++    }
++}
+diff --git a/src/main/java/com/destroystokyo/paper/gui/RAMDetails.java b/src/main/java/com/destroystokyo/paper/gui/RAMDetails.java
+index 039a86034928a5eb7aaa2d7ca76a7bddcca346bd..7f7525b6c422038e72622caa9a99cf251805060e 100644
+--- a/src/main/java/com/destroystokyo/paper/gui/RAMDetails.java
++++ b/src/main/java/com/destroystokyo/paper/gui/RAMDetails.java
+@@ -1,5 +1,6 @@
+ package com.destroystokyo.paper.gui;
+ 
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.Util;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.util.TimeUtil;
+@@ -81,6 +82,6 @@ public class RAMDetails extends JList<String> {
+     }
+ 
+     private static String format(double tps) {
+-        return ( ( tps > 21.0 ) ? "*" : "" ) + Math.min( Math.round( tps * 100.0 ) / 100.0, 20.0 );
++        return ( ( tps > 21.0 ) ? "*" : "" ) + Math.min( FastMath.round( tps * 100.0 ) / 100.0, 20.0 ); // CubePie - Optimize Math.round and Math.hypot functions
+     }
+ }
+diff --git a/src/main/java/com/destroystokyo/paper/gui/RAMGraph.java b/src/main/java/com/destroystokyo/paper/gui/RAMGraph.java
+index c3e54da4ab6440811aab2f9dd1e218802ac13285..7c8278f2ca2f7542294d9e9b4c49a3dcbaef19bb 100644
+--- a/src/main/java/com/destroystokyo/paper/gui/RAMGraph.java
++++ b/src/main/java/com/destroystokyo/paper/gui/RAMGraph.java
+@@ -1,5 +1,7 @@
+ package com.destroystokyo.paper.gui;
+ 
++import carpetfixes.helpers.FastMath;
++
+ import javax.swing.JComponent;
+ import javax.swing.SwingUtilities;
+ import javax.swing.Timer;
+@@ -128,7 +130,7 @@ public class RAMGraph extends JComponent {
+             graphics.setColor(data.getLineColor());
+             graphics.fillOval(m.x - 2, 100 - used - 2, 5, 5);
+             setToolTipText(String.format("<html><body>Used: %s mb (%s%%)<br/>%s</body></html>",
+-                Math.round(data.getUsedMem() / 1024F / 1024F),
++                FastMath.round(data.getUsedMem() / 1024F / 1024F), // CubePie - Optimize Math.round and Math.hypot functions
+                 used, getTime(m.x)));
+         }
+     }
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 158391cd5038b5ed1b1f88e24f08503f088bae52..dd227dd4fc3858b0502f0fb8a71f74b46ab31478 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.server;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.google.common.base.Preconditions;
+ import com.google.common.base.Splitter;
+ import com.google.common.collect.ImmutableList;
+@@ -407,7 +408,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                 }
+ 
+                 final double overuseCount = (double)overuse/(double)MAX_CHUNK_EXEC_TIME;
+-                final long extraSleep = (long)Math.round(overuseCount*CHUNK_TASK_QUEUE_BACKOFF_MIN_TIME);
++                final long extraSleep = (long) FastMath.round(overuseCount*CHUNK_TASK_QUEUE_BACKOFF_MIN_TIME); // CubePie - Optimize Math.round and Math.hypot functions
+ 
+                 this.lastMidTickExecute = currTime + extraSleep;
+                 return;
+diff --git a/src/main/java/net/minecraft/server/gui/StatsComponent.java b/src/main/java/net/minecraft/server/gui/StatsComponent.java
+index 096c89bd01cec2abd151bf6fffc4847d1bcd548f..fbff418dc33fb008d772236718559ee6152f4e9a 100644
+--- a/src/main/java/net/minecraft/server/gui/StatsComponent.java
++++ b/src/main/java/net/minecraft/server/gui/StatsComponent.java
+@@ -8,6 +8,8 @@ import java.text.DecimalFormatSymbols;
+ import java.util.Locale;
+ import javax.swing.JComponent;
+ import javax.swing.Timer;
++
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.Util;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.util.TimeUtil;
+@@ -78,7 +80,7 @@ public class StatsComponent extends JComponent {
+ 
+     // Paper start - Improve ServerGUI
+     private static String format(double tps) {
+-        return (( tps > 21.0 ) ? "*" : "") + Math.min(Math.round(tps * 100.0) / 100.0, 20.0); // only print * at 21, we commonly peak to 20.02 as the tick sleep is not accurate enough, stop the noise
++        return (( tps > 21.0 ) ? "*" : "") + Math.min(FastMath.round(tps * 100.0) / 100.0, 20.0); // only print * at 21, we commonly peak to 20.02 as the tick sleep is not accurate enough, stop the noise // CubePie - Optimize Math.round and Math.hypot functions
+     }
+     // Paper end - Improve ServerGUI
+ }
+diff --git a/src/main/java/net/minecraft/util/Mth.java b/src/main/java/net/minecraft/util/Mth.java
+index f298cdfcf1539e467f57f9f7789de3cf2ca54665..11a44bf11e44c5f76bc7e6626f49384c29370e80 100644
+--- a/src/main/java/net/minecraft/util/Mth.java
++++ b/src/main/java/net/minecraft/util/Mth.java
+@@ -4,6 +4,8 @@ import java.util.Locale;
+ import java.util.UUID;
+ import java.util.function.IntPredicate;
+ import java.util.stream.IntStream;
++
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.Util;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.world.phys.AABB;
+@@ -631,7 +633,7 @@ public class Mth {
+     }
+ 
+     public static double length(double a, double b) {
+-        return Math.sqrt(lengthSquared(a, b));
++        return FastMath.hypot(a, b); // CubePie - Optimize Math.round and Math.hypot functions
+     }
+ 
+     public static double lengthSquared(double a, double b, double c) {
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index c961798d994fbb2b85cf92923ea94eac0d465541..605a12f108d325d0040095940e84908ffc65609e 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.entity;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.arushia.cubepie.util.CubePieConstants;
+ import com.google.common.annotations.VisibleForTesting;
+ import com.google.common.base.Objects;
+@@ -1610,7 +1611,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             if (this instanceof ServerPlayer) {
+                 CriteriaTriggers.ENTITY_HURT_PLAYER.trigger((ServerPlayer) this, source, f1, amount, flag);
+                 if (f2 > 0.0F && f2 < 3.4028235E37F) {
+-                    ((ServerPlayer) this).awardStat(Stats.DAMAGE_BLOCKED_BY_SHIELD, Math.round(f2 * 10.0F));
++                    ((ServerPlayer) this).awardStat(Stats.DAMAGE_BLOCKED_BY_SHIELD, FastMath.round(f2 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                 }
+             }
+ 
+@@ -2217,9 +2218,9 @@ public abstract class LivingEntity extends Entity implements Attackable {
+ 
+                 if (f3 > 0.0F && f3 < 3.4028235E37F) {
+                     if (this instanceof ServerPlayer) {
+-                        ((ServerPlayer) this).awardStat(Stats.DAMAGE_RESISTED, Math.round(f3 * 10.0F));
++                        ((ServerPlayer) this).awardStat(Stats.DAMAGE_RESISTED, FastMath.round(f3 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                     } else if (source.getEntity() instanceof ServerPlayer) {
+-                        ((ServerPlayer) source.getEntity()).awardStat(Stats.DAMAGE_DEALT_RESISTED, Math.round(f3 * 10.0F));
++                        ((ServerPlayer) source.getEntity()).awardStat(Stats.DAMAGE_DEALT_RESISTED, FastMath.round(f3 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                     }
+                 }
+             }
+@@ -2355,9 +2356,9 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                 float f3 = (float) -event.getDamage(DamageModifier.RESISTANCE);
+                 if (f3 > 0.0F && f3 < 3.4028235E37F) {
+                     if (this instanceof ServerPlayer) {
+-                        ((ServerPlayer) this).awardStat(Stats.DAMAGE_RESISTED, Math.round(f3 * 10.0F));
++                        ((ServerPlayer) this).awardStat(Stats.DAMAGE_RESISTED, FastMath.round(f3 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                     } else if (damagesource.getEntity() instanceof ServerPlayer) {
+-                        ((ServerPlayer) damagesource.getEntity()).awardStat(Stats.DAMAGE_DEALT_RESISTED, Math.round(f3 * 10.0F));
++                        ((ServerPlayer) damagesource.getEntity()).awardStat(Stats.DAMAGE_DEALT_RESISTED, FastMath.round(f3 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                     }
+                 }
+             }
+@@ -2390,7 +2391,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             float f2 = absorptionModifier;
+ 
+             if (f2 > 0.0F && f2 < 3.4028235E37F && this instanceof net.minecraft.world.entity.player.Player) {
+-                ((net.minecraft.world.entity.player.Player) this).awardStat(Stats.DAMAGE_ABSORBED, Math.round(f2 * 10.0F));
++                ((net.minecraft.world.entity.player.Player) this).awardStat(Stats.DAMAGE_ABSORBED, FastMath.round(f2 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+             }
+             // CraftBukkit end
+ 
+@@ -2400,7 +2401,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                 if (entity instanceof ServerPlayer) {
+                     ServerPlayer entityplayer = (ServerPlayer) entity;
+ 
+-                    entityplayer.awardStat(Stats.DAMAGE_DEALT_ABSORBED, Math.round(f2 * 10.0F));
++                    entityplayer.awardStat(Stats.DAMAGE_DEALT_ABSORBED, FastMath.round(f2 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                 }
+             }
+ 
+@@ -2410,7 +2411,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                     // PAIL: Be sure to drag all this code from the EntityHuman subclass each update.
+                     ((net.minecraft.world.entity.player.Player) this).causeFoodExhaustion(damagesource.getFoodExhaustion(), org.bukkit.event.entity.EntityExhaustionEvent.ExhaustionReason.DAMAGED); // CraftBukkit - EntityExhaustionEvent
+                     if (f < 3.4028235E37F) {
+-                        ((net.minecraft.world.entity.player.Player) this).awardStat(Stats.DAMAGE_TAKEN, Math.round(f * 10.0F));
++                        ((net.minecraft.world.entity.player.Player) this).awardStat(Stats.DAMAGE_TAKEN, FastMath.round(f * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                     }
+                 }
+                 // CraftBukkit end
+@@ -2430,7 +2431,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                         CriteriaTriggers.ENTITY_HURT_PLAYER.trigger((ServerPlayer) this, damagesource, originalDamage, f, true); // Paper - fix taken/dealt param order
+                         f2 = (float) -event.getDamage(DamageModifier.BLOCKING);
+                         if (f2 > 0.0F && f2 < 3.4028235E37F) {
+-                            ((ServerPlayer) this).awardStat(Stats.DAMAGE_BLOCKED_BY_SHIELD, Math.round(originalDamage * 10.0F));
++                            ((ServerPlayer) this).awardStat(Stats.DAMAGE_BLOCKED_BY_SHIELD, FastMath.round(originalDamage * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                         }
+                     }
+ 
+@@ -3214,13 +3215,13 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         this.level().getProfiler().push("rangeChecks");
+ 
+         // Paper start - stop large pitch and yaw changes from crashing the server
+-        this.yRotO += Math.round((this.getYRot() - this.yRotO) / 360.0F) * 360.0F;
++        this.yRotO += FastMath.round((this.getYRot() - this.yRotO) / 360.0F) * 360.0F; // CubePie - Optimize Math.round and Math.hypot functions
+ 
+-        this.yBodyRotO += Math.round((this.yBodyRot - this.yBodyRotO) / 360.0F) * 360.0F;
++        this.yBodyRotO += FastMath.round((this.yBodyRot - this.yBodyRotO) / 360.0F) * 360.0F; // CubePie - Optimize Math.round and Math.hypot functions
+ 
+-        this.xRotO += Math.round((this.getXRot() - this.xRotO) / 360.0F) * 360.0F;
++        this.xRotO += FastMath.round((this.getXRot() - this.xRotO) / 360.0F) * 360.0F; // CubePie - Optimize Math.round and Math.hypot functions
+ 
+-        this.yHeadRotO += Math.round((this.yHeadRot - this.yHeadRotO) / 360.0F) * 360.0F;
++        this.yHeadRotO += FastMath.round((this.yHeadRot - this.yHeadRotO) / 360.0F) * 360.0F; // CubePie - Optimize Math.round and Math.hypot functions
+         // Paper end
+ 
+         this.level().getProfiler().pop();
+diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index 86d4829ea805e578f77ce2b761c671619f9771f3..39e8d235d2d8420e611bf017f251ae47e0b1a635 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Player.java
++++ b/src/main/java/net/minecraft/world/entity/player/Player.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.entity.player;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.arushia.cubepie.util.CubePieConstants;
+ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableMap;
+@@ -1104,7 +1105,7 @@ public abstract class Player extends LivingEntity {
+             float f2 = f1 - f;
+ 
+             if (f2 > 0.0F && f2 < 3.4028235E37F) {
+-                this.awardStat(Stats.DAMAGE_ABSORBED, Math.round(f2 * 10.0F));
++                this.awardStat(Stats.DAMAGE_ABSORBED, FastMath.round(f2 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+             }
+ 
+             if (f != 0.0F) {
+@@ -1112,7 +1113,7 @@ public abstract class Player extends LivingEntity {
+                 this.getCombatTracker().recordDamage(damagesource, f);
+                 this.setHealth(this.getHealth() - f);
+                 if (f < 3.4028235E37F) {
+-                    this.awardStat(Stats.DAMAGE_TAKEN, Math.round(f * 10.0F));
++                    this.awardStat(Stats.DAMAGE_TAKEN, FastMath.round(f * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                 }
+ 
+                 this.gameEvent(GameEvent.ENTITY_DAMAGE);
+@@ -1475,7 +1476,7 @@ public abstract class Player extends LivingEntity {
+                         if (target instanceof LivingEntity) {
+                             float f8 = f4 - ((LivingEntity) target).getHealth();
+ 
+-                            this.awardStat(Stats.DAMAGE_DEALT, Math.round(f8 * 10.0F));
++                            this.awardStat(Stats.DAMAGE_DEALT, FastMath.round(f8 * 10.0F)); // CubePie - Optimize Math.round and Math.hypot functions
+                             if (this.level() instanceof ServerLevel && f8 > 2.0F) {
+                                 int i = (int) ((double) f8 * 0.5D);
+ 
+@@ -1720,7 +1721,7 @@ public abstract class Player extends LivingEntity {
+             return false;
+         } else {
+             if (fallDistance >= 2.0F) {
+-                this.awardStat(Stats.FALL_ONE_CM, (int) Math.round((double) fallDistance * 100.0D));
++                this.awardStat(Stats.FALL_ONE_CM, (int) FastMath.round((double) fallDistance * 100.0D)); // CubePie - Optimize Math.round and Math.hypot functions
+             }
+ 
+             boolean flag;
+diff --git a/src/main/java/net/minecraft/world/item/Item.java b/src/main/java/net/minecraft/world/item/Item.java
+index 8fd54bccb7af59da9113d8a289d12d8fad1fb467..764bb9f3704aef035058c11ba496683a3b4c71cc 100644
+--- a/src/main/java/net/minecraft/world/item/Item.java
++++ b/src/main/java/net/minecraft/world/item/Item.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.item;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.google.common.collect.Interner;
+ import com.google.common.collect.Interners;
+ import com.google.common.collect.Maps;
+@@ -162,7 +163,7 @@ public class Item implements FeatureElement, ItemLike {
+     }
+ 
+     public int getBarWidth(ItemStack stack) {
+-        return Mth.clamp(Math.round(13.0F - (float)stack.getDamageValue() * 13.0F / (float)stack.getMaxDamage()), 0, 13);
++        return Mth.clamp(FastMath.round(13.0F - (float)stack.getDamageValue() * 13.0F / (float)stack.getMaxDamage()), 0, 13); // CubePie - Optimize Math.round and Math.hypot functions
+     }
+ 
+     public int getBarColor(ItemStack stack) {
+diff --git a/src/main/java/net/minecraft/world/item/enchantment/EnchantmentHelper.java b/src/main/java/net/minecraft/world/item/enchantment/EnchantmentHelper.java
+index fce49b17905ab97e691aa8499a5dfed67adf0c40..12aca3a92424f85611fa3b3bf18ec71cd38f0e8c 100644
+--- a/src/main/java/net/minecraft/world/item/enchantment/EnchantmentHelper.java
++++ b/src/main/java/net/minecraft/world/item/enchantment/EnchantmentHelper.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.item.enchantment;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.google.common.collect.Lists;
+ import com.mojang.datafixers.util.Pair;
+ import it.unimi.dsi.fastutil.objects.Object2IntMap.Entry;
+@@ -488,7 +489,7 @@ public class EnchantmentHelper {
+         } else {
+             level += 1 + random.nextInt(i / 4 + 1) + random.nextInt(i / 4 + 1);
+             float f = (random.nextFloat() + random.nextFloat() - 1.0F) * 0.15F;
+-            level = Mth.clamp(Math.round((float)level + (float)level * f), 1, Integer.MAX_VALUE);
++            level = Mth.clamp(FastMath.round((float)level + (float)level * f), 1, Integer.MAX_VALUE); // CubePie - Optimize Math.round and Math.hypot functions
+             List<EnchantmentInstance> list2 = getAvailableEnchantmentResults(level, stack, possibleEnchantments);
+             if (!list2.isEmpty()) {
+                 WeightedRandom.getRandomItem(random, list2).ifPresent(list::add);
+diff --git a/src/main/java/net/minecraft/world/level/block/DaylightDetectorBlock.java b/src/main/java/net/minecraft/world/level/block/DaylightDetectorBlock.java
+index 26ec4838c476b8091f80aeac61db8041d5c89e88..b112893a7551a9367019198635591ced6d2ac24f 100644
+--- a/src/main/java/net/minecraft/world/level/block/DaylightDetectorBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/DaylightDetectorBlock.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.level.block;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.mojang.serialization.MapCodec;
+ import javax.annotation.Nullable;
+ import net.minecraft.core.BlockPos;
+@@ -69,7 +70,7 @@ public class DaylightDetectorBlock extends BaseEntityBlock {
+             float f1 = f < 3.1415927F ? 0.0F : 6.2831855F;
+ 
+             f += (f1 - f) * 0.2F;
+-            i = Math.round((float) i * Mth.cos(f));
++            i = FastMath.round((float) i * Mth.cos(f)); // CubePie - Optimize Math.round and Math.hypot functions
+         }
+ 
+         i = Mth.clamp(i, 0, 15);
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/SurfaceSystem.java b/src/main/java/net/minecraft/world/level/levelgen/SurfaceSystem.java
+index 466cba9d2184fe7565abbb820587a272d8d109dd..1a838cd790cc248fd771642d230589da8e116483 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/SurfaceSystem.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/SurfaceSystem.java
+@@ -3,6 +3,8 @@ package net.minecraft.world.level.levelgen;
+ import java.util.Arrays;
+ import java.util.Optional;
+ import java.util.function.Function;
++
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.Registry;
+@@ -322,7 +324,7 @@ public class SurfaceSystem {
+     }
+ 
+     protected BlockState getBand(int x, int y, int z) {
+-        int i = (int)Math.round(this.clayBandsOffsetNoise.getValue((double)x, 0.0, (double)z) * 4.0);
++        int i = (int) FastMath.round(this.clayBandsOffsetNoise.getValue((double)x, 0.0, (double)z) * 4.0); // CubePie - Optimize Math.round and Math.hypot functions
+         return this.clayBands[(y + i + this.clayBands.length) % this.clayBands.length];
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/levelgen/feature/ScatteredOreFeature.java b/src/main/java/net/minecraft/world/level/levelgen/feature/ScatteredOreFeature.java
+index 9cd3ed6c2673fabc5b5a700646e7c75c7e8d2a92..1449bb77ade59b108cb8aa0f702da70b244be27c 100644
+--- a/src/main/java/net/minecraft/world/level/levelgen/feature/ScatteredOreFeature.java
++++ b/src/main/java/net/minecraft/world/level/levelgen/feature/ScatteredOreFeature.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.level.levelgen.feature;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.mojang.serialization.Codec;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.util.RandomSource;
+@@ -46,6 +47,6 @@ public class ScatteredOreFeature extends Feature<OreConfiguration> {
+     }
+ 
+     private int getRandomPlacementInOneAxisRelativeToOrigin(RandomSource random, int spread) {
+-        return Math.round((random.nextFloat() - random.nextFloat()) * (float)spread);
++        return FastMath.round((random.nextFloat() - random.nextFloat()) * (float)spread); // CubePie - Optimize Math.round and Math.hypot functions
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/storage/loot/providers/number/NumberProvider.java b/src/main/java/net/minecraft/world/level/storage/loot/providers/number/NumberProvider.java
+index 2a7c75ea447b179ea1ab9db56e8a39d03faa0bce..0a17fee8a8d55ab0eeb1092bf70d94f56af6e453 100644
+--- a/src/main/java/net/minecraft/world/level/storage/loot/providers/number/NumberProvider.java
++++ b/src/main/java/net/minecraft/world/level/storage/loot/providers/number/NumberProvider.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.level.storage.loot.providers.number;
+ 
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.world.level.storage.loot.LootContext;
+ import net.minecraft.world.level.storage.loot.LootContextUser;
+ 
+@@ -7,7 +8,7 @@ public interface NumberProvider extends LootContextUser {
+     float getFloat(LootContext context);
+ 
+     default int getInt(LootContext context) {
+-        return Math.round(this.getFloat(context));
++        return FastMath.round(this.getFloat(context)); // CubePie - Optimize Math.round and Math.hypot functions
+     }
+ 
+     LootNumberProviderType getType();
+diff --git a/src/main/java/net/minecraft/world/phys/shapes/Shapes.java b/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
+index c348171c150bf69d24303d0862e45ab78baddcab..9d2cdffcfbded0d4c7a12e8c9b2667098479b04e 100644
+--- a/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
++++ b/src/main/java/net/minecraft/world/phys/shapes/Shapes.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.phys.shapes;
+ 
++import carpetfixes.helpers.FastMath;
+ import com.google.common.annotations.VisibleForTesting;
+ import com.google.common.math.DoubleMath;
+ import com.google.common.math.IntMath;
+@@ -96,8 +97,8 @@ public final class Shapes {
+                     final int sizeZ = 1 << bitsZ;
+                     final BitSetDiscreteVoxelShape shape = BitSetDiscreteVoxelShape.withFilledBounds(
+                         sizeX, sizeY, sizeZ,
+-                        (int)Math.round(minX * (double)sizeX), (int)Math.round(minY * (double)sizeY), (int)Math.round(minZ * (double)sizeZ),
+-                        (int)Math.round(maxX * (double)sizeX), (int)Math.round(maxY * (double)sizeY), (int)Math.round(maxZ * (double)sizeZ)
++                        (int)FastMath.round(minX * (double)sizeX), (int)FastMath.round(minY * (double)sizeY), (int)FastMath.round(minZ * (double)sizeZ), // CubePie - Optimize Math.round and Math.hypot functions
++                        (int)FastMath.round(maxX * (double)sizeX), (int)FastMath.round(maxY * (double)sizeY), (int)FastMath.round(maxZ * (double)sizeZ)  // CubePie - Optimize Math.round and Math.hypot functions
+                     );
+                     return new ArrayVoxelShape(
+                         shape,
+@@ -131,8 +132,8 @@ public final class Shapes {
+                 int j = 1 << i;
+                 double d = min * (double)j;
+                 double e = max * (double)j;
+-                boolean bl = Math.abs(d - (double)Math.round(d)) < 1.0E-7 * (double)j;
+-                boolean bl2 = Math.abs(e - (double)Math.round(e)) < 1.0E-7 * (double)j;
++                boolean bl = Math.abs(d - (double)FastMath.round(d)) < 1.0E-7 * (double)j;  // CubePie - Optimize Math.round and Math.hypot functions
++                boolean bl2 = Math.abs(e - (double)FastMath.round(e)) < 1.0E-7 * (double)j; // CubePie - Optimize Math.round and Math.hypot functions
+                 if (bl && bl2) {
+                     return i;
+                 }
+diff --git a/src/main/java/org/spigotmc/TicksPerSecondCommand.java b/src/main/java/org/spigotmc/TicksPerSecondCommand.java
+index 9eb2823cc8f83bad2626fc77578b0162d9ed5782..2bd0db49752580656a27aff5fa7c77f7db87d3b9 100644
+--- a/src/main/java/org/spigotmc/TicksPerSecondCommand.java
++++ b/src/main/java/org/spigotmc/TicksPerSecondCommand.java
+@@ -1,5 +1,6 @@
+ package org.spigotmc;
+ 
++import carpetfixes.helpers.FastMath;
+ import net.minecraft.server.MinecraftServer;
+ import org.bukkit.ChatColor;
+ import org.bukkit.command.Command;
+@@ -62,7 +63,7 @@ public class TicksPerSecondCommand extends Command
+     {
+         // Paper
+         net.kyori.adventure.text.format.TextColor color = ( ( tps > 18.0 ) ? net.kyori.adventure.text.format.NamedTextColor.GREEN : ( tps > 16.0 ) ? net.kyori.adventure.text.format.NamedTextColor.YELLOW : net.kyori.adventure.text.format.NamedTextColor.RED );
+-        String amount = Math.min(Math.round(tps * 100.0) / 100.0, 20.0) + (tps > 21.0  ? "*" : ""); // Paper - only print * at 21, we commonly peak to 20.02 as the tick sleep is not accurate enough, stop the noise
++        String amount = Math.min(FastMath.round(tps * 100.0) / 100.0, 20.0) + (tps > 21.0  ? "*" : ""); // Paper - only print * at 21, we commonly peak to 20.02 as the tick sleep is not accurate enough, stop the noise // CubePie - Optimize Math.round and Math.hypot functions
+         return net.kyori.adventure.text.Component.text(amount, color);
+         // Paper end
+     }

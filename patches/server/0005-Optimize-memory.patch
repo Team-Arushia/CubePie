@@ -1,0 +1,265 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 17:39:52 +0900
+Subject: [PATCH] Optimize memory
+
+
+diff --git a/src/main/java/com/arushia/cubepie/util/CubePieConstants.java b/src/main/java/com/arushia/cubepie/util/CubePieConstants.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0eaacee7feedd5ea7eb64304927e7a92cd12835c
+--- /dev/null
++++ b/src/main/java/com/arushia/cubepie/util/CubePieConstants.java
+@@ -0,0 +1,20 @@
++package com.arushia.cubepie.util;
++
++import net.minecraft.sounds.SoundEvents;
++import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.item.ItemCooldowns;
++
++public interface CubePieConstants {
++    // Common
++    int[] ZERO = new int[0];
++    int[] MULTI_ZERO = new int[]{0};
++
++    // Entity
++    ItemCooldowns ITEM_COOLDOWNS = new ItemCooldowns();
++
++    // Sound
++    LivingEntity.Fallsounds LIVING_ENTITY = new LivingEntity.Fallsounds(SoundEvents.GENERIC_SMALL_FALL, SoundEvents.GENERIC_BIG_FALL);
++    LivingEntity.Fallsounds PLAYER = new LivingEntity.Fallsounds(SoundEvents.PLAYER_SMALL_FALL, SoundEvents.PLAYER_BIG_FALL);
++    LivingEntity.Fallsounds MONSTER = new LivingEntity.Fallsounds(SoundEvents.HOSTILE_SMALL_FALL, SoundEvents.HOSTILE_BIG_FALL);
++    LivingEntity.Fallsounds ARMOR_STAND = new LivingEntity.Fallsounds(SoundEvents.ARMOR_STAND_FALL, SoundEvents.ARMOR_STAND_FALL);
++}
+diff --git a/src/main/java/com/mojang/datafixers/functions/PointFree.java b/src/main/java/com/mojang/datafixers/functions/PointFree.java
+index 81b0dff25809f0c8f2c7a6ed8e6d19fe4b0d6f05..7f696b98fe807c46a2cea5e37759aadef66b6082 100644
+--- a/src/main/java/com/mojang/datafixers/functions/PointFree.java
++++ b/src/main/java/com/mojang/datafixers/functions/PointFree.java
+@@ -19,12 +19,12 @@ public abstract class PointFree<T> {
+         if (!initialized) {
+             synchronized (this) {
+                 if (!initialized) {
+-                    value = eval();
++                    //value = eval(); // CubePie - Optimize memory
+                     initialized = true;
+                 }
+             }
+         }
+-        return value;
++        return eval(); // CubePie - Optimize memory
+     }
+ 
+     public abstract Type<T> type();
+diff --git a/src/main/java/com/mojang/datafixers/types/Type.java b/src/main/java/com/mojang/datafixers/types/Type.java
+index c917e6cf076fa2e427d49a1732bde99a9c62d81a..d54334212cbcefe247bb3154fb1868ce418ad799 100644
+--- a/src/main/java/com/mojang/datafixers/types/Type.java
++++ b/src/main/java/com/mojang/datafixers/types/Type.java
+@@ -93,10 +93,12 @@ public abstract class Type<A> implements App<Type.Mu, A> {
+     }
+ 
+     public TypeTemplate template() {
+-        if (template == null) {
++        // CubePie start - Optimize memory
++        /*if (template == null) {
+             template = buildTemplate();
+-        }
+-        return template;
++        }*/
++        return buildTemplate();
++        // CubePie end - Optimize memory
+     }
+ 
+     public abstract TypeTemplate buildTemplate();
+@@ -114,10 +116,12 @@ public abstract class Type<A> implements App<Type.Mu, A> {
+     }
+ 
+     public final Codec<A> codec() {
+-        if (codec == null) {
++        // CubePie start - Optimize memory
++        /*if (codec == null) {
+             codec = buildCodec();
+-        }
+-        return codec;
++        }*/
++        return buildCodec();
++        // CubePie end - Optimize memory
+     }
+ 
+     protected abstract Codec<A> buildCodec();
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 14cc1e80b7244fdc2e9cf3cfffa02492b47f2b81..c961798d994fbb2b85cf92923ea94eac0d465541 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.entity;
+ 
++import com.arushia.cubepie.util.CubePieConstants;
+ import com.google.common.annotations.VisibleForTesting;
+ import com.google.common.base.Objects;
+ import com.google.common.collect.ImmutableList;
+@@ -2030,7 +2031,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     }
+ 
+     public LivingEntity.Fallsounds getFallSounds() {
+-        return new LivingEntity.Fallsounds(SoundEvents.GENERIC_SMALL_FALL, SoundEvents.GENERIC_BIG_FALL);
++        return CubePieConstants.LIVING_ENTITY; // CubePie - Optimize memory
+     }
+ 
+     protected SoundEvent getDrinkingSound(ItemStack stack) {
+diff --git a/src/main/java/net/minecraft/world/entity/animal/Pig.java b/src/main/java/net/minecraft/world/entity/animal/Pig.java
+index 03d29d5114237f5700c188510a12f26507844c3d..172e007fbbc2c8592dcdb6c2a76e5d23b6787bfc 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/Pig.java
++++ b/src/main/java/net/minecraft/world/entity/animal/Pig.java
+@@ -284,7 +284,7 @@ public class Pig extends Animal implements ItemSteerable, Saddleable {
+ 
+     @Override
+     protected Vec3 getRiddenInput(Player controllingPlayer, Vec3 movementInput) {
+-        return new Vec3(0.0D, 0.0D, 1.0D);
++        return Vec3.ZERO; // CubePie - Optimize memory
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
+index bbe82081363e761afce886658c88f01b9f14719a..935fb3d595ea6119231fa633cdbd3dd22fad9999 100644
+--- a/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
++++ b/src/main/java/net/minecraft/world/entity/decoration/ArmorStand.java
+@@ -4,6 +4,8 @@ import java.util.Iterator;
+ import java.util.List;
+ import java.util.function.Predicate;
+ import javax.annotation.Nullable;
++
++import com.arushia.cubepie.util.CubePieConstants;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.NonNullList;
+ import net.minecraft.core.Rotations;
+@@ -928,7 +930,7 @@ public class ArmorStand extends LivingEntity {
+ 
+     @Override
+     public LivingEntity.Fallsounds getFallSounds() {
+-        return new LivingEntity.Fallsounds(SoundEvents.ARMOR_STAND_FALL, SoundEvents.ARMOR_STAND_FALL);
++        return CubePieConstants.ARMOR_STAND; // CubePie - Optimize memory
+     }
+ 
+     @Nullable
+diff --git a/src/main/java/net/minecraft/world/entity/monster/Monster.java b/src/main/java/net/minecraft/world/entity/monster/Monster.java
+index e7bfce0534c7ef3a1480a1082ae8514caf78778b..813d5056aa3422549c4ecd96b36e8fe7e82f6ccf 100644
+--- a/src/main/java/net/minecraft/world/entity/monster/Monster.java
++++ b/src/main/java/net/minecraft/world/entity/monster/Monster.java
+@@ -1,6 +1,8 @@
+ package net.minecraft.world.entity.monster;
+ 
+ import java.util.function.Predicate;
++
++import com.arushia.cubepie.util.CubePieConstants;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.sounds.SoundEvents;
+@@ -78,7 +80,7 @@ public abstract class Monster extends PathfinderMob implements Enemy {
+ 
+     @Override
+     public LivingEntity.Fallsounds getFallSounds() {
+-        return new LivingEntity.Fallsounds(SoundEvents.HOSTILE_SMALL_FALL, SoundEvents.HOSTILE_BIG_FALL);
++        return CubePieConstants.MONSTER; // CubePie - Optimize memory
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/entity/monster/Strider.java b/src/main/java/net/minecraft/world/entity/monster/Strider.java
+index 92ece5a2d3a60636916a200ce474bc19250300cd..3882eb61289ab617a3a8a93fc71c2e226163faa9 100644
+--- a/src/main/java/net/minecraft/world/entity/monster/Strider.java
++++ b/src/main/java/net/minecraft/world/entity/monster/Strider.java
+@@ -286,7 +286,7 @@ public class Strider extends Animal implements ItemSteerable, Saddleable {
+ 
+     @Override
+     protected Vec3 getRiddenInput(Player controllingPlayer, Vec3 movementInput) {
+-        return new Vec3(0.0D, 0.0D, 1.0D);
++        return Vec3.ZERO; // CubePie - Optimize memory
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index 09bcbc0ae36e4e69fee87a7e0c49acf496117a39..86d4829ea805e578f77ce2b761c671619f9771f3 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Player.java
++++ b/src/main/java/net/minecraft/world/entity/player/Player.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.entity.player;
+ 
++import com.arushia.cubepie.util.CubePieConstants;
+ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableMap;
+ import com.google.common.collect.Lists;
+@@ -369,7 +370,7 @@ public abstract class Player extends LivingEntity {
+     }
+ 
+     protected ItemCooldowns createItemCooldowns() {
+-        return new ItemCooldowns();
++        return CubePieConstants.ITEM_COOLDOWNS; // CubePie - Optimize memory
+     }
+ 
+     private void moveCloak() {
+@@ -1814,7 +1815,7 @@ public abstract class Player extends LivingEntity {
+ 
+     @Override
+     public LivingEntity.Fallsounds getFallSounds() {
+-        return new LivingEntity.Fallsounds(SoundEvents.PLAYER_SMALL_FALL, SoundEvents.PLAYER_BIG_FALL);
++        return CubePieConstants.PLAYER; // CubePie - Optimize memory
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/level/biome/Biome.java b/src/main/java/net/minecraft/world/level/biome/Biome.java
+index 90c165c890a2d998e3b0af9b4310e3995ede6f64..ee77e42f26cdc248ed0c701f2d5203f0e5dd5543 100644
+--- a/src/main/java/net/minecraft/world/level/biome/Biome.java
++++ b/src/main/java/net/minecraft/world/level/biome/Biome.java
+@@ -63,14 +63,14 @@ public final class Biome {
+     private final BiomeGenerationSettings generationSettings;
+     private final MobSpawnSettings mobSettings;
+     private final BiomeSpecialEffects specialEffects;
+-    private final ThreadLocal<Long2FloatLinkedOpenHashMap> temperatureCache = ThreadLocal.withInitial(() -> Util.make(() -> {
++    /*private final ThreadLocal<Long2FloatLinkedOpenHashMap> temperatureCache = ThreadLocal.withInitial(() -> Util.make(() -> {
+             Long2FloatLinkedOpenHashMap long2FloatLinkedOpenHashMap = new Long2FloatLinkedOpenHashMap(1024, 0.25F) {
+                 protected void rehash(int i) {
+                 }
+             };
+             long2FloatLinkedOpenHashMap.defaultReturnValue(Float.NaN);
+             return long2FloatLinkedOpenHashMap;
+-        }));
++        }));*/ // CubePie - Optimize memory
+ 
+     Biome(Biome.ClimateSettings weather, BiomeSpecialEffects effects, BiomeGenerationSettings generationSettings, MobSpawnSettings spawnSettings) {
+         this.climateSettings = weather;
+diff --git a/src/main/java/net/minecraft/world/level/block/ComposterBlock.java b/src/main/java/net/minecraft/world/level/block/ComposterBlock.java
+index d3d12f9114173f4971f95d7ef895a4374705bd3f..af12b1e0dfba242442d5315f9ee2fa0800bf1ea6 100644
+--- a/src/main/java/net/minecraft/world/level/block/ComposterBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/ComposterBlock.java
+@@ -1,5 +1,6 @@
+ package net.minecraft.world.level.block;
+ 
++import com.arushia.cubepie.util.CubePieConstants;
+ import com.mojang.serialization.MapCodec;
+ import it.unimi.dsi.fastutil.objects.Object2FloatMap;
+ import it.unimi.dsi.fastutil.objects.Object2FloatOpenHashMap;
+@@ -430,7 +431,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(Direction side) {
+-            return side == Direction.DOWN ? new int[]{0} : new int[0];
++            return side == Direction.UP ? CubePieConstants.MULTI_ZERO : CubePieConstants.ZERO; // CubePie - Optimize memory
+         }
+ 
+         @Override
+@@ -479,7 +480,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(Direction side) {
+-            return side == Direction.UP ? new int[]{0} : new int[0];
++            return side == Direction.UP ? CubePieConstants.MULTI_ZERO : CubePieConstants.ZERO; // CubePie - Optimize memory
+         }
+ 
+         @Override
+@@ -521,7 +522,7 @@ public class ComposterBlock extends Block implements WorldlyContainerHolder {
+ 
+         @Override
+         public int[] getSlotsForFace(Direction side) {
+-            return new int[0];
++            return CubePieConstants.ZERO; // CubePie - Optimize memory
+         }
+ 
+         @Override

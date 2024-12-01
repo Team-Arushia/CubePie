@@ -15,3 +15,15 @@ minecraft net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket
 minecraft net.minecraft.world.entity.ai.goal.RangedBowAttackGoal
 minecraft net.minecraft.util.Mth
 minecraft net.minecraft.world.level.block.Blocks
+minecraft net.minecraft.commands.arguments.TimeArgument
+minecraft net.minecraft.world.item.Item
+minecraft net.minecraft.world.item.enchantment.EnchantmentHelper
+minecraft net.minecraft.world.level.levelgen.SurfaceSystem
+minecraft net.minecraft.world.level.levelgen.feature.ScatteredOreFeature
+minecraft net.minecraft.world.level.storage.loot.providers.number.NumberProvider
+minecraft net.minecraft.advancements.critereon.InventoryChangeTrigger
+minecraft net.minecraft.advancements.critereon.ItemPredicate
+
+datafixerupper com.mojang.datafixers.functions.PointFree
+datafixerupper com.mojang.datafixers.types.Type
+datafixerupper com.mojang.datafixers.types.Type

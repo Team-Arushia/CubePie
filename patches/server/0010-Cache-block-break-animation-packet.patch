@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 18:40:37 +0900
+Subject: [PATCH] Cache block break animation packet
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index c96f3dcd365bc140b1f4680ef6bd770c80f8eda1..f0ef11adde7f75cbdee33c2b7889b780fc19f4f3 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -1621,6 +1621,7 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+         }
+         // Paper end - Add BlockBreakProgressUpdateEvent
+ 
++        ClientboundBlockDestructionPacket packet = null; // SportPaper - Cache block break animation packet
+         while (iterator.hasNext()) {
+             ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+ 
+@@ -1636,7 +1637,10 @@ public class ServerLevel extends Level implements WorldGenLevel, ca.spottedleaf.
+                 // CraftBukkit end
+ 
+                 if (d0 * d0 + d1 * d1 + d2 * d2 < 1024.0D) {
+-                    entityplayer.connection.send(new ClientboundBlockDestructionPacket(entityId, pos, progress));
++                    // SportPaper start
++                    if (packet == null) packet = new ClientboundBlockDestructionPacket(entityId, pos, progress);
++                    entityplayer.connection.send(packet);
++                    // SportPaper end
+                 }
+             }
+         }

@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 19:56:46 +0900
+Subject: [PATCH] Lithium: Fast hand swing
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 605a12f108d325d0040095940e84908ffc65609e..04fe6baa2ba124086f3e70f3e3ef4eac7ae5bf3c 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -2633,6 +2633,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     }
+ 
+     protected void updateSwingTime() {
++        if(!this.swinging && this.swingTime == 0) return; // CubePie - Lithium: Fast hand swing
+         int i = this.getCurrentSwingDuration();
+ 
+         if (this.swinging) {

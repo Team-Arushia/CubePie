@@ -1,0 +1,138 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 16:16:18 +0900
+Subject: [PATCH] add cubepie configuration
+
+
+diff --git a/src/main/java/com/arushia/cubepie/configuration/CubePieConfiguration.java b/src/main/java/com/arushia/cubepie/configuration/CubePieConfiguration.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef6bdfafe386086ac57c348dc47832a615d6df8f
+--- /dev/null
++++ b/src/main/java/com/arushia/cubepie/configuration/CubePieConfiguration.java
+@@ -0,0 +1,60 @@
++package com.arushia.cubepie.configuration;
++
++import org.bukkit.Bukkit;
++import org.bukkit.configuration.file.YamlConfiguration;
++import org.jetbrains.annotations.NotNull;
++
++import java.io.BufferedReader;
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStreamReader;
++import java.util.Objects;
++
++public final class CubePieConfiguration {
++    private static final YamlConfiguration DEFAULT_CONFIG;
++    static {
++        try {
++            DEFAULT_CONFIG = YamlConfiguration.loadConfiguration(new BufferedReader(new InputStreamReader(Objects.requireNonNull(Objects.requireNonNull(CubePieConfiguration.class.getClassLoader().getResource("configurations/cubepie.yml")).openStream()))));
++        } catch (IOException e) {
++            throw new RuntimeException(e);
++        }
++    }
++
++    private static CubePieConfiguration instance;
++
++    private final YamlConfiguration config;
++
++    private CubePieConfiguration(File rootDirectory){
++        File configFile = new File(rootDirectory.getPath(), "cubepie.yml");
++        if(!configFile.exists()){
++            try {
++                if(configFile.createNewFile()){
++                    DEFAULT_CONFIG.save(configFile);
++                } else {
++                    throw new RuntimeException("Failed to create cubepie.yml");
++                }
++            } catch (IOException e) {
++                throw new RuntimeException("Failed to create cubepie.yml", e);
++            }
++        }
++
++        config = YamlConfiguration.loadConfiguration(configFile);
++        config.setDefaults(DEFAULT_CONFIG);
++    }
++
++    public @NotNull YamlConfiguration getConfig() {
++        return Objects.requireNonNull(config);
++    }
++
++    public static CubePieConfiguration getInstance() {
++        return instance;
++    }
++
++    public static @NotNull CubePieConfiguration setup(File rootDirectory){
++        CubePieConfiguration configuration = new CubePieConfiguration(rootDirectory);
++        if(CubePieConfiguration.instance != null)
++            throw new RuntimeException("Already initialized!");
++        CubePieConfiguration.instance = configuration;
++        return configuration;
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 696d075ca2883f3c37e35f983c4d020e5db89d16..158391cd5038b5ed1b1f88e24f08503f088bae52 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -317,6 +317,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     public final double[] recentTps = new double[ 3 ];
+     // Spigot end
+     public final io.papermc.paper.configuration.PaperConfigurations paperConfigurations; // Paper - add paper configuration files
++    public final com.arushia.cubepie.configuration.CubePieConfiguration cubePieConfiguration; // CubePie - add cubepie configuration
+     public boolean isIteratingOverLevels = false; // Paper - Throw exception on world create while being ticked
+ 
+     public volatile Thread shutdownThread; // Paper
+@@ -496,6 +497,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         Runtime.getRuntime().addShutdownHook(new org.bukkit.craftbukkit.util.ServerShutdownThread(this));
+         // CraftBukkit end
+         this.paperConfigurations = services.paperConfigurations(); // Paper - add paper configuration files
++        this.cubePieConfiguration = services.cubepieConfiguration(); // CubePie - add cubepie configuration
+     }
+ 
+     private void readScoreboard(DimensionDataStorage persistentStateManager) {
+diff --git a/src/main/java/net/minecraft/server/Services.java b/src/main/java/net/minecraft/server/Services.java
+index 33e3815a0c979609d4c7ab83ad91e87ac07a556d..8dd042560901fb08c297ef2a7d91b699202f1ca4 100644
+--- a/src/main/java/net/minecraft/server/Services.java
++++ b/src/main/java/net/minecraft/server/Services.java
+@@ -12,17 +12,26 @@ import net.minecraft.util.SignatureValidator;
+ 
+ 
+ public record Services(
+-    MinecraftSessionService sessionService, ServicesKeySet servicesKeySet, GameProfileRepository profileRepository, GameProfileCache profileCache, @javax.annotation.Nullable io.papermc.paper.configuration.PaperConfigurations paperConfigurations // Paper - add paper configuration files
++    MinecraftSessionService sessionService, ServicesKeySet servicesKeySet, GameProfileRepository profileRepository, GameProfileCache profileCache, @javax.annotation.Nullable io.papermc.paper.configuration.PaperConfigurations paperConfigurations, // Paper - add paper configuration files
++    @javax.annotation.Nullable com.arushia.cubepie.configuration.CubePieConfiguration cubepieConfiguration                                                                                                                                            // CubePie - add cubepie configuration
+ ) {
+     // Paper start - add paper configuration files
+     public Services(MinecraftSessionService sessionService, ServicesKeySet servicesKeySet, GameProfileRepository profileRepository, GameProfileCache profileCache) {
+-        this(sessionService, servicesKeySet, profileRepository, profileCache, null);
++        this(sessionService, servicesKeySet, profileRepository, profileCache, null, null);
+     }
+ 
+     @Override
+     public io.papermc.paper.configuration.PaperConfigurations paperConfigurations() {
+         return java.util.Objects.requireNonNull(this.paperConfigurations);
+     }
++
++    // CubePie start - add cubepie configuration
++    @Override
++    public com.arushia.cubepie.configuration.CubePieConfiguration cubepieConfiguration() {
++        return java.util.Objects.requireNonNull(this.cubepieConfiguration);
++    }
++    // CubePie end - add cubepie configuration
++
+     // Paper end - add paper configuration files
+     public static final String USERID_CACHE_FILE = "usercache.json"; // Paper - private -> public
+ 
+@@ -34,7 +43,8 @@ public record Services(
+         final java.nio.file.Path legacyConfigPath = ((File) optionSet.valueOf("paper-settings")).toPath();
+         final java.nio.file.Path configDirPath = ((File) optionSet.valueOf("paper-settings-directory")).toPath();
+         io.papermc.paper.configuration.PaperConfigurations paperConfigurations = io.papermc.paper.configuration.PaperConfigurations.setup(legacyConfigPath, configDirPath, rootDirectory.toPath(), (File) optionSet.valueOf("spigot-settings"));
+-        return new Services(minecraftSessionService, authenticationService.getServicesKeySet(), gameProfileRepository, gameProfileCache, paperConfigurations);
++        com.arushia.cubepie.configuration.CubePieConfiguration cubePieConfiguration = com.arushia.cubepie.configuration.CubePieConfiguration.setup(rootDirectory); // CubePie - add cubepie configuration
++        return new Services(minecraftSessionService, authenticationService.getServicesKeySet(), gameProfileRepository, gameProfileCache, paperConfigurations, cubePieConfiguration);
+         // Paper end - load paper config files from cli options
+     }
+ 
+diff --git a/src/main/resources/configurations/cubepie.yml b/src/main/resources/configurations/cubepie.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391

@@ -1,0 +1,202 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Sun, 1 Dec 2024 16:37:11 +0900
+Subject: [PATCH] Implement No Chat Reports
+
+
+diff --git a/src/main/java/net/minecraft/network/FriendlyByteBuf.java b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+index 0cd6a50837efce87ca052a0e1e24db2b75761196..9b8593a6b5fc6fa335dff9e347fc05b2c26a57d2 100644
+--- a/src/main/java/net/minecraft/network/FriendlyByteBuf.java
++++ b/src/main/java/net/minecraft/network/FriendlyByteBuf.java
+@@ -55,8 +55,10 @@ import net.minecraft.nbt.NbtIo;
+ import net.minecraft.nbt.Tag;
+ import net.minecraft.network.codec.StreamDecoder;
+ import net.minecraft.network.codec.StreamEncoder;
++import net.minecraft.network.protocol.status.ServerStatus;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.resources.ResourceLocation;
++import net.minecraft.server.MinecraftServer;
+ import net.minecraft.util.Crypt;
+ import net.minecraft.util.CryptException;
+ import net.minecraft.util.GsonHelper;
+@@ -122,6 +124,18 @@ public class FriendlyByteBuf extends ByteBuf {
+     }
+ 
+     public <T> void writeJsonWithCodec(Codec<T> codec, T value) {
++        // CubePie start - Implement No Chat Reports
++        if(MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("no-chat-reports.enabled") && codec == ServerStatus.CODEC){
++            DataResult<JsonElement> dataResult = codec.encodeStart(JsonOps.INSTANCE, value);
++            JsonElement element = dataResult.getOrThrow(string -> new EncoderException("Failed to encode: " + string + " " + value));
++
++            element.getAsJsonObject().addProperty("preventsChatReports", true);
++
++            this.writeUtf(GSON.toJson(element));
++            return;
++        }
++        // CubePie end - Implement No Chat Reports
++
+         // Paper start - Adventure; add max length parameter
+         this.writeJsonWithCodec(codec, value, MAX_STRING_LENGTH);
+     }
+diff --git a/src/main/java/net/minecraft/network/protocol/game/ServerboundChatCommandSignedPacket.java b/src/main/java/net/minecraft/network/protocol/game/ServerboundChatCommandSignedPacket.java
+index fa84f1aa4a8737fab0b9f278dc6457917736d543..eda254640da9da5a6c15eb07620bd74cacc90bd6 100644
+--- a/src/main/java/net/minecraft/network/protocol/game/ServerboundChatCommandSignedPacket.java
++++ b/src/main/java/net/minecraft/network/protocol/game/ServerboundChatCommandSignedPacket.java
+@@ -7,6 +7,7 @@ import net.minecraft.network.chat.LastSeenMessages;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.server.MinecraftServer;
+ 
+ public record ServerboundChatCommandSignedPacket(
+     String command, Instant timeStamp, long salt, ArgumentSignatures argumentSignatures, LastSeenMessages.Update lastSeenMessages
+@@ -36,4 +37,17 @@ public record ServerboundChatCommandSignedPacket(
+     public void handle(ServerGamePacketListener listener) {
+         listener.handleSignedChatCommand(this);
+     }
++
++    // CubePie start - Implement No Chat Reports
++    /**
++     * @reason Same as {@link ServerboundChatPacket#signature()}.
++     * @author Aizistral
++     */
++    @Override
++    public ArgumentSignatures argumentSignatures() {
++        if(MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("no-chat-reports.enabled"))
++            return ArgumentSignatures.EMPTY;
++        return argumentSignatures;
++    }
++    // CubePie end - Implement No Chat Reports
+ }
+diff --git a/src/main/java/net/minecraft/network/protocol/game/ServerboundChatPacket.java b/src/main/java/net/minecraft/network/protocol/game/ServerboundChatPacket.java
+index 07df3299f1d1aa5506e1f6f146347d53e0278d9c..cf2d2a1ae5ee2e700c0545b31ca4b495c4d69831 100644
+--- a/src/main/java/net/minecraft/network/protocol/game/ServerboundChatPacket.java
++++ b/src/main/java/net/minecraft/network/protocol/game/ServerboundChatPacket.java
+@@ -2,12 +2,15 @@ package net.minecraft.network.protocol.game;
+ 
+ import java.time.Instant;
+ import javax.annotation.Nullable;
++
++import com.arushia.cubepie.configuration.CubePieConfiguration;
+ import net.minecraft.network.FriendlyByteBuf;
+ import net.minecraft.network.chat.LastSeenMessages;
+ import net.minecraft.network.chat.MessageSignature;
+ import net.minecraft.network.codec.StreamCodec;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketType;
++import net.minecraft.server.MinecraftServer;
+ 
+ public record ServerboundChatPacket(String message, Instant timeStamp, long salt, @Nullable MessageSignature signature, LastSeenMessages.Update lastSeenMessages)
+     implements Packet<ServerGamePacketListener> {
+@@ -36,4 +39,20 @@ public record ServerboundChatPacket(String message, Instant timeStamp, long salt
+     public void handle(ServerGamePacketListener listener) {
+         listener.handleChat(this);
+     }
++
++    // CubePie start - Implement No Chat Reports
++    /**
++     * @reason Strip signatures before relaying messages to other clients, if they arrive signed
++     * This is important for mod to be able to operate in server-only mode without
++     * {@link CubePieConfiguration#getConfig()}'s no-chat-reports' convert-to-game-message enabled.
++     * @author Aizistral
++     */
++    @Override
++    @Nullable
++    public MessageSignature signature() {
++        if(MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("no-chat-reports.enabled"))
++            return null;
++        return signature;
++    }
++    // CubePie end - Implement No Chat Reports
+ }
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index dd56c8e041116ef3602a9f89c998c8208ab89b51..31f716879b0f0f5e15d0a4ca2e9a949e30b62acb 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -660,8 +660,17 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         return this.getProperties().networkCompressionThreshold;
+     }
+ 
++    // CubePie start - Implement No Chat Reports
++    /**
++     * @reason If mod is installed on server - it does the exact opposite of what this option is
++     * designed to enforce, so there's no reason to have it enabled.
++     * @author Aizistral
++     */
+     @Override
+     public boolean enforceSecureProfile() {
++        if(services.cubepieConfiguration().getConfig().getBoolean("no-chat-reports.enabled"))
++            return false;
++        // CubePie end - Implement No Chat Reports
+         DedicatedServerProperties dedicatedserverproperties = this.getProperties();
+ 
+         // Paper start - Add setting for proxy online mode status
+diff --git a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 6998f32f8d79dbdb6b31ffaa126602fc4a428616..1a76c826055a1b0750d15bca2ba94388ed411ccc 100644
+--- a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -24,7 +24,9 @@ import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+ import net.minecraft.network.protocol.common.ServerboundPongPacket;
+ import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
+ import net.minecraft.network.protocol.cookie.ServerboundCookieResponsePacket;
++import net.minecraft.network.protocol.game.ClientboundPlayerChatPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
++import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+ import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.level.ClientInformation;
+@@ -294,7 +296,25 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         this.connection.flushChannel();
+     }
+ 
++    // CubePie start - Implement No Chat Reports
++    /**
++     * @reason Convert player message to system message if mod is configured respectively.
++     * This allows to circumvent signature check on client, as it only checks player messages.
++     * @author JFronny (original implementation)
++     * @author Aizistral
++     */
+     public void send(Packet<?> packet) {
++        if(server.cubePieConfiguration.getConfig().getBoolean("no-chat-reports.enabled") && server.cubePieConfiguration.getConfig().getBoolean("no-chat-reports.convert-to-game-message")){
++            if(packet instanceof ClientboundPlayerChatPacket chat){
++                packet = new ClientboundSystemChatPacket(chat.chatType().decorate(
++                    chat.unsignedContent() != null ? chat.unsignedContent()
++                        : Component.literal(chat.body().content())
++                ), false);
++                this.send(packet);
++                return;
++            }
++        }
++        // CubePie end - Implement No Chat Reports
+         this.send(packet, (PacketSendListener) null);
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index c13922d2fb1c15f895b14d4cb6d5379b59ea1ef8..02d60c7e23392679c2e3cffc336d7c2ffb64f59b 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -1422,7 +1422,15 @@ public abstract class PlayerList {
+ 
+     }
+ 
++    // CubePie start - Implement No Chat Reports
++    /**
++     * @reason Remove "Not Secure" mark in server chat logs.
++     * @author Aizistral
++     */
+     public boolean verifyChatTrusted(PlayerChatMessage message) { // Paper - private -> public
++        if(server.cubePieConfiguration.getConfig().getBoolean("no-chat-reports.enabled"))
++            return true;
++        // CubePie end - Implement No Chat Reports
+         return message.hasSignature() && !message.hasExpiredServer(Instant.now());
+     }
+ 
+diff --git a/src/main/resources/configurations/cubepie.yml b/src/main/resources/configurations/cubepie.yml
+index e69de29bb2d1d6434b8b29ae775ad8c2e48c5391..42000f5fbcc521cc045d5e5f7c0d1e1b9b59eeef 100644
+--- a/src/main/resources/configurations/cubepie.yml
++++ b/src/main/resources/configurations/cubepie.yml
+@@ -0,0 +1,3 @@
++no-chat-reports:
++  enabled: true
++  convert-to-game-message: true
+\ No newline at end of file

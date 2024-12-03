@@ -1,0 +1,271 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Tue, 3 Dec 2024 19:38:00 +0900
+Subject: [PATCH] lithium: collections
+
+
+diff --git a/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java b/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
+index 038710ba934a9a57815dfe9f414b98223b848385..78119083e262960a776d10d73be05c79c52e4d18 100644
+--- a/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
++++ b/src/main/java/net/minecraft/util/ClassInstanceMultiMap.java
+@@ -4,17 +4,15 @@ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.Iterators;
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Maps;
+-import java.util.AbstractCollection;
+-import java.util.Collection;
+-import java.util.Collections;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Map;
++
++import java.util.*;
+ import java.util.Map.Entry;
++
++import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
+ import net.minecraft.Util;
+ 
+ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+-    private final Map<Class<?>, List<T>> byClass = Maps.newHashMap();
++    private final Map<Class<?>, List<T>> byClass = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
+     private final Class<T> baseClass;
+     private final List<T> allInstances = Lists.newArrayList();
+ 
+@@ -55,15 +53,37 @@ public class ClassInstanceMultiMap<T> extends AbstractCollection<T> {
+         return this.find(object.getClass()).contains(object);
+     }
+ 
++    // CubePie start - lithium: collections
++    /**
++     * @reason Only perform the slow Class#isAssignableFrom(Class) if a list doesn't exist for the type, otherwise
++     * we can assume it's already valid. The slow-path code is moved to a separate method to help the JVM inline this.
++     * @author JellySquid
++     */
++    @SuppressWarnings("unchecked")
+     public <S> Collection<S> find(Class<S> type) {
+-        if (!this.baseClass.isAssignableFrom(type)) {
+-            throw new IllegalArgumentException("Don't know how to search for " + type);
+-        } else {
+-            List<? extends T> list = this.byClass
+-                .computeIfAbsent(type, typeClass -> this.allInstances.stream().filter(typeClass::isInstance).collect(Util.toMutableList()));
+-            return (Collection<S>)Collections.unmodifiableCollection(list);
++        Collection<T> collection = this.byClass.get(type);
++
++        if (collection == null) {
++            collection = this.createAllOfType(type);
+         }
++
++        return (Collection<S>) Collections.unmodifiableCollection(collection);
++    }
++
++    private <S> Collection<T> createAllOfType(Class<S> type) {
++        List<T> list = new ArrayList<>();
++
++        for (T allElement : this.allInstances) {
++            if (type.isInstance(allElement)) {
++                list.add(allElement);
++            }
++        }
++
++        this.byClass.put(type, list);
++
++        return list;
+     }
++    // CubePie end
+ 
+     @Override
+     public Iterator<T> iterator() {
+diff --git a/src/main/java/net/minecraft/util/random/WeightedRandomList.java b/src/main/java/net/minecraft/util/random/WeightedRandomList.java
+index ef44047c3ea850fe52370b8176efbdf0515d20d6..17540f2198d29431ea1995176d7096c0c9c7f274 100644
+--- a/src/main/java/net/minecraft/util/random/WeightedRandomList.java
++++ b/src/main/java/net/minecraft/util/random/WeightedRandomList.java
+@@ -2,19 +2,28 @@ package net.minecraft.util.random;
+ 
+ import com.google.common.collect.ImmutableList;
+ import com.mojang.serialization.Codec;
++
++import java.util.Collections;
+ import java.util.List;
+ import java.util.Objects;
+ import java.util.Optional;
+ import javax.annotation.Nullable;
++
++import net.caffeinemc.mods.lithium.common.util.collections.HashedReferenceList;
+ import net.minecraft.util.RandomSource;
+ 
+ public class WeightedRandomList<E extends WeightedEntry> {
+     private final int totalWeight;
+     private final ImmutableList<E> items;
++    private List<E> entryHashList; // CubePie - lithium: collections
+ 
+     WeightedRandomList(List<? extends E> entries) {
+         this.items = ImmutableList.copyOf(entries);
+         this.totalWeight = WeightedRandom.getTotalWeight(entries);
++        // CubePie start - lithium: collections
++        //We are using reference equality here, because all vanilla implementations of Weighted use reference equality
++        this.entryHashList = this.items.size() > 4 ? Collections.unmodifiableList(new HashedReferenceList<>(this.items)) : this.items;
++        // CubePie end
+     }
+ 
+     public static <E extends WeightedEntry> WeightedRandomList<E> create() {
+@@ -43,9 +52,15 @@ public class WeightedRandomList<E extends WeightedEntry> {
+         }
+     }
+ 
++    // CubePie start - lithium: collections
++    /**
++     * @author 2No2Name
++     * @reason return a collection with a faster contains() call
++     */
+     public List<E> unwrap() {
+-        return this.items;
++        return this.entryHashList;
+     }
++    // CubePie end
+ 
+     public static <E extends WeightedEntry> Codec<WeightedRandomList<E>> codec(Codec<E> entryCodec) {
+         return entryCodec.listOf().xmap(WeightedRandomList::create, WeightedRandomList::unwrap);
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 78481bee2336c2ffe44e40330ae2f10ee32a7817..f6f4e40ced5351c4ea7ae147827fe23805d8160f 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -27,6 +27,8 @@ import java.util.function.BiConsumer;
+ import java.util.function.Predicate;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.ReferenceArraySet;
+ import net.minecraft.BlockUtil;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+@@ -557,7 +559,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+         this.random = SHARED_RANDOM; // Paper - Share random for entities to make them more random
+         this.remainingFireTicks = -this.getFireImmuneTicks();
+         this.fluidHeight = new Object2DoubleArrayMap(2);
+-        this.fluidOnEyes = new HashSet();
++        this.fluidOnEyes = new ReferenceArraySet<>(); // CubePie - lithium: collections
+         this.firstTick = true;
+         this.levelCallback = EntityInLevelCallback.NULL;
+         this.packetPositionCodec = new VecDeltaCodec();
+diff --git a/src/main/java/net/minecraft/world/entity/ai/Brain.java b/src/main/java/net/minecraft/world/entity/ai/Brain.java
+index afbb027021acfbe25d534a84f1750e420bbde6e0..46192592e08cd20b8698bfc24c4246a8464ac66c 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/Brain.java
++++ b/src/main/java/net/minecraft/world/entity/ai/Brain.java
+@@ -25,6 +25,8 @@ import java.util.Map.Entry;
+ import java.util.function.Supplier;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
+ import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.util.VisibleForDebug;
+@@ -45,11 +47,11 @@ public class Brain<E extends LivingEntity> {
+     static final Logger LOGGER = LogUtils.getLogger();
+     private final Supplier<Codec<Brain<E>>> codec;
+     private static final int SCHEDULE_UPDATE_DELAY = 20;
+-    private final Map<MemoryModuleType<?>, Optional<? extends ExpirableValue<?>>> memories = Maps.newHashMap();
+-    private final Map<SensorType<? extends Sensor<? super E>>, Sensor<? super E>> sensors = Maps.newLinkedHashMap();
++    private final Map<MemoryModuleType<?>, Optional<? extends ExpirableValue<?>>> memories = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
++    private final Map<SensorType<? extends Sensor<? super E>>, Sensor<? super E>> sensors = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
+     private final Map<Integer, Map<Activity, Set<BehaviorControl<? super E>>>> availableBehaviorsByPriority = Maps.newTreeMap();
+     private Schedule schedule = Schedule.EMPTY;
+-    private final Map<Activity, Set<Pair<MemoryModuleType<?>, MemoryStatus>>> activityRequirements = Maps.newHashMap();
++    private final Map<Activity, Set<Pair<MemoryModuleType<?>, MemoryStatus>>> activityRequirements = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
+     private final Map<Activity, Set<MemoryModuleType<?>>> activityMemoriesToEraseWhenStopped = Maps.newHashMap();
+     private Set<Activity> coreActivities = Sets.newHashSet();
+     private final Set<Activity> activeActivities = Sets.newHashSet();
+diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+index 69992ebc999ea3ff9e47e4e049bcc514c01150ca..2f235d0ab6abed83ffee1c77feede3558bb89941 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
++++ b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+@@ -9,6 +9,8 @@ import java.util.Map;
+ import java.util.Set;
+ import java.util.stream.Collectors;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
+ import net.minecraft.Util;
+ import net.minecraft.core.Holder;
+ import net.minecraft.core.registries.BuiltInRegistries;
+@@ -20,8 +22,8 @@ import org.slf4j.Logger;
+ public class AttributeMap {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final Map<Holder<Attribute>, AttributeInstance> attributes = new Object2ObjectOpenHashMap<>();
+-    private final Set<AttributeInstance> attributesToSync = new ObjectOpenHashSet<>();
+-    private final Set<AttributeInstance> attributesToUpdate = new ObjectOpenHashSet<>();
++    private final Set<AttributeInstance> attributesToSync = new ReferenceOpenHashSet<>(1);   // CubePie - lithium: collections
++    private final Set<AttributeInstance> attributesToUpdate = new ReferenceOpenHashSet<>(1); // CubePie - lithium: collections
+     private final AttributeSupplier supplier;
+ 
+     public AttributeMap(AttributeSupplier defaultAttributes) {
+diff --git a/src/main/java/net/minecraft/world/level/GameRules.java b/src/main/java/net/minecraft/world/level/GameRules.java
+index 89e327bc3a45879fe68887c7aadb077f31a770eb..2f7c5fad190d847dfb08b64e1f71e581e2e11683 100644
+--- a/src/main/java/net/minecraft/world/level/GameRules.java
++++ b/src/main/java/net/minecraft/world/level/GameRules.java
+@@ -21,6 +21,8 @@ import java.util.function.BiConsumer;
+ import java.util.function.Function;
+ import java.util.function.Supplier;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+ import net.minecraft.commands.CommandSourceStack;
+ import net.minecraft.commands.Commands;
+ import net.minecraft.nbt.CompoundTag;
+@@ -149,7 +151,7 @@ public class GameRules {
+     }
+ 
+     private GameRules(Map<GameRules.Key<?>, GameRules.Value<?>> rules) {
+-        this.rules = rules;
++        this.rules = new Object2ObjectOpenHashMap<>(rules); // CubePie - lithium: collections
+ 
+         // Paper start - Perf: Use array for gamerule storage
+         int arraySize = rules.keySet().stream().mapToInt(key -> key.gameRuleIndex).max().orElse(-1) + 1;
+diff --git a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
+index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..87ea38ba42460fc233857338c95ba7451afa9c7c 100644
+--- a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
++++ b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
+@@ -51,13 +51,21 @@ public class MobSpawnSettings {
+     private final Map<MobCategory, WeightedRandomList<MobSpawnSettings.SpawnerData>> spawners;
+     private final Map<EntityType<?>, MobSpawnSettings.MobSpawnCost> mobSpawnCosts;
+ 
++    // CubePie start - lithium: collections
++    /**
++     * Re-initialize the spawn category lists with a much faster backing collection type for enum keys. This provides
++     * a modest speed-up for mob spawning as {@link MobSpawnSettings#getMobs(MobCategory)} is a rather hot method.
++     */
+     MobSpawnSettings(
+         float creatureSpawnProbability,
+         Map<MobCategory, WeightedRandomList<MobSpawnSettings.SpawnerData>> spawners,
+         Map<EntityType<?>, MobSpawnSettings.MobSpawnCost> spawnCosts
+     ) {
+         this.creatureGenerationProbability = creatureSpawnProbability;
+-        this.spawners = ImmutableMap.copyOf(spawners);
++        Map<MobCategory, WeightedRandomList<MobSpawnSettings.SpawnerData>> spawns = Maps.newEnumMap(MobCategory.class);
++        spawns.putAll(spawners);
++        this.spawners = spawns;
++        // CubePie end - lithium: collections
+         this.mobSpawnCosts = ImmutableMap.copyOf(spawnCosts);
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index 7c11853c5090fbc4fa5b3e73a69acf166158fdec..01856696e3e4d3f509629af16be8dac7fd2e0bd0 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -6,6 +6,7 @@ import com.google.common.collect.UnmodifiableIterator;
+ import com.mojang.logging.LogUtils;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
++import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.shorts.ShortListIterator;
+ import java.util.Iterator;
+ import java.util.Map;
+@@ -92,7 +93,7 @@ public class LevelChunk extends ChunkAccess implements ca.spottedleaf.moonrise.p
+ 
+     public LevelChunk(Level world, ChunkPos pos, UpgradeData upgradeData, LevelChunkTicks<Block> blockTickScheduler, LevelChunkTicks<Fluid> fluidTickScheduler, long inhabitedTime, @Nullable LevelChunkSection[] sectionArrayInitializer, @Nullable LevelChunk.PostLoadProcessor entityLoader, @Nullable BlendingData blendingData) {
+         super(pos, upgradeData, world, net.minecraft.server.MinecraftServer.getServer().registryAccess().registryOrThrow(Registries.BIOME), inhabitedTime, sectionArrayInitializer, blendingData); // Paper - Anti-Xray - The world isn't ready yet, use server singleton for registry
+-        this.tickersInLevel = Maps.newHashMap();
++        this.tickersInLevel = new Object2ObjectOpenHashMap<>(); // CubePie - lithium: collections
+         this.level = (ServerLevel) world; // CraftBukkit - type
+         this.gameEventListenerRegistrySections = new Int2ObjectOpenHashMap();
+         Heightmap.Types[] aheightmap_type = Heightmap.Types.values();

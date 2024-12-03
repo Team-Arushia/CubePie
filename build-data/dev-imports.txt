@@ -23,6 +23,9 @@ minecraft net.minecraft.world.level.levelgen.feature.ScatteredOreFeature
 minecraft net.minecraft.world.level.storage.loot.providers.number.NumberProvider
 minecraft net.minecraft.advancements.critereon.InventoryChangeTrigger
 minecraft net.minecraft.advancements.critereon.ItemPredicate
+minecraft net.minecraft.world.entity.ai.Brain
+minecraft net.minecraft.util.ClassInstanceMultiMap
+minecraft net.minecraft.util.random.WeightedRandomList
 
 datafixerupper com.mojang.datafixers.functions.PointFree
 datafixerupper com.mojang.datafixers.types.Type

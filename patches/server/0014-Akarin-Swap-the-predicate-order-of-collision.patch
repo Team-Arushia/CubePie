@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Mon, 2 Dec 2024 22:08:27 +0900
+Subject: [PATCH] Akarin: Swap the predicate order of collision
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b6d8c6521b9832f3bd42466143931964fec47391..78481bee2336c2ffe44e40330ae2f10ee32a7817 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -2178,8 +2178,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+     public void playerTouch(Player player) {}
+ 
+     public void push(Entity entity) {
+-        if (!this.isPassengerOfSameVehicle(entity)) {
+-            if (!entity.noPhysics && !this.noPhysics) {
++        if (!entity.noPhysics && !this.noPhysics && !this.isPassengerOfSameVehicle(entity)) { // Akarin - Swap the predicate order of collision
+                 if (this.level.paperConfig().collisions.onlyPlayersCollide && !(entity instanceof ServerPlayer || this instanceof ServerPlayer)) return; // Paper - Collision option for requiring a player participant
+                 double d0 = entity.getX() - this.getX();
+                 double d1 = entity.getZ() - this.getZ();
+@@ -2207,8 +2206,6 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+                         entity.push(d0, 0.0D, d1);
+                     }
+                 }
+-
+-            }
+         }
+     }
+ 

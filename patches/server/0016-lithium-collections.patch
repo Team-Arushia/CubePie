@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: woobeen Jeon <woobeen0516@gmail.com>
-Date: Tue, 3 Dec 2024 19:38:00 +0900
+Date: Tue, 3 Dec 2024 21:23:54 +0900
 Subject: [PATCH] lithium: collections
 
 
@@ -76,7 +76,7 @@ index 038710ba934a9a57815dfe9f414b98223b848385..78119083e262960a776d10d73be05c79
      @Override
      public Iterator<T> iterator() {
 diff --git a/src/main/java/net/minecraft/util/random/WeightedRandomList.java b/src/main/java/net/minecraft/util/random/WeightedRandomList.java
-index ef44047c3ea850fe52370b8176efbdf0515d20d6..17540f2198d29431ea1995176d7096c0c9c7f274 100644
+index ef44047c3ea850fe52370b8176efbdf0515d20d6..1611d30e30524302081d9cfc1437a42eaab5d6de 100644
 --- a/src/main/java/net/minecraft/util/random/WeightedRandomList.java
 +++ b/src/main/java/net/minecraft/util/random/WeightedRandomList.java
 @@ -2,19 +2,28 @@ package net.minecraft.util.random;
@@ -96,7 +96,7 @@ index ef44047c3ea850fe52370b8176efbdf0515d20d6..17540f2198d29431ea1995176d7096c0
  public class WeightedRandomList<E extends WeightedEntry> {
      private final int totalWeight;
      private final ImmutableList<E> items;
-+    private List<E> entryHashList; // CubePie - lithium: collections
++    private List<E> entryHashList;
  
      WeightedRandomList(List<? extends E> entries) {
          this.items = ImmutableList.copyOf(entries);
@@ -126,7 +126,7 @@ index ef44047c3ea850fe52370b8176efbdf0515d20d6..17540f2198d29431ea1995176d7096c0
      public static <E extends WeightedEntry> Codec<WeightedRandomList<E>> codec(Codec<E> entryCodec) {
          return entryCodec.listOf().xmap(WeightedRandomList::create, WeightedRandomList::unwrap);
 diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
-index 78481bee2336c2ffe44e40330ae2f10ee32a7817..f6f4e40ced5351c4ea7ae147827fe23805d8160f 100644
+index 78481bee2336c2ffe44e40330ae2f10ee32a7817..b09b23c0643798500063ee59f28dcb707ef41075 100644
 --- a/src/main/java/net/minecraft/world/entity/Entity.java
 +++ b/src/main/java/net/minecraft/world/entity/Entity.java
 @@ -27,6 +27,8 @@ import java.util.function.BiConsumer;
@@ -143,43 +143,31 @@ index 78481bee2336c2ffe44e40330ae2f10ee32a7817..f6f4e40ced5351c4ea7ae147827fe238
          this.remainingFireTicks = -this.getFireImmuneTicks();
          this.fluidHeight = new Object2DoubleArrayMap(2);
 -        this.fluidOnEyes = new HashSet();
-+        this.fluidOnEyes = new ReferenceArraySet<>(); // CubePie - lithium: collections
++        this.fluidOnEyes = new ReferenceArraySet<>();
          this.firstTick = true;
          this.levelCallback = EntityInLevelCallback.NULL;
          this.packetPositionCodec = new VecDeltaCodec();
-diff --git a/src/main/java/net/minecraft/world/entity/ai/Brain.java b/src/main/java/net/minecraft/world/entity/ai/Brain.java
-index afbb027021acfbe25d534a84f1750e420bbde6e0..46192592e08cd20b8698bfc24c4246a8464ac66c 100644
---- a/src/main/java/net/minecraft/world/entity/ai/Brain.java
-+++ b/src/main/java/net/minecraft/world/entity/ai/Brain.java
-@@ -25,6 +25,8 @@ import java.util.Map.Entry;
- import java.util.function.Supplier;
- import java.util.stream.Stream;
- import javax.annotation.Nullable;
-+
-+import it.unimi.dsi.fastutil.objects.Reference2ReferenceOpenHashMap;
- import net.minecraft.core.registries.BuiltInRegistries;
- import net.minecraft.server.level.ServerLevel;
- import net.minecraft.util.VisibleForDebug;
-@@ -45,11 +47,11 @@ public class Brain<E extends LivingEntity> {
-     static final Logger LOGGER = LogUtils.getLogger();
-     private final Supplier<Codec<Brain<E>>> codec;
-     private static final int SCHEDULE_UPDATE_DELAY = 20;
--    private final Map<MemoryModuleType<?>, Optional<? extends ExpirableValue<?>>> memories = Maps.newHashMap();
--    private final Map<SensorType<? extends Sensor<? super E>>, Sensor<? super E>> sensors = Maps.newLinkedHashMap();
-+    private final Map<MemoryModuleType<?>, Optional<? extends ExpirableValue<?>>> memories = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
-+    private final Map<SensorType<? extends Sensor<? super E>>, Sensor<? super E>> sensors = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
-     private final Map<Integer, Map<Activity, Set<BehaviorControl<? super E>>>> availableBehaviorsByPriority = Maps.newTreeMap();
-     private Schedule schedule = Schedule.EMPTY;
--    private final Map<Activity, Set<Pair<MemoryModuleType<?>, MemoryStatus>>> activityRequirements = Maps.newHashMap();
-+    private final Map<Activity, Set<Pair<MemoryModuleType<?>, MemoryStatus>>> activityRequirements = new Reference2ReferenceOpenHashMap<>(); // CubePie - lithium: collections
-     private final Map<Activity, Set<MemoryModuleType<?>>> activityMemoriesToEraseWhenStopped = Maps.newHashMap();
-     private Set<Activity> coreActivities = Sets.newHashSet();
-     private final Set<Activity> activeActivities = Sets.newHashSet();
+@@ -1948,7 +1950,8 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+ 
+     private void updateFluidOnEyes() {
+         this.wasEyeInWater = this.isEyeInFluid(FluidTags.WATER);
+-        this.fluidOnEyes.clear();
++        if(!this.fluidOnEyes.isEmpty()) // CubePie - lithium: collections
++            this.fluidOnEyes.clear();
+         double d0 = this.getEyeY();
+         Entity entity = this.getVehicle();
+ 
 diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
-index 69992ebc999ea3ff9e47e4e049bcc514c01150ca..2f235d0ab6abed83ffee1c77feede3558bb89941 100644
+index 69992ebc999ea3ff9e47e4e049bcc514c01150ca..7f0b90dd7e53887b12fa54142475642e0e46a045 100644
 --- a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
 +++ b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
-@@ -9,6 +9,8 @@ import java.util.Map;
+@@ -3,12 +3,13 @@ package net.minecraft.world.entity.ai.attributes;
+ import com.google.common.collect.Multimap;
+ import com.mojang.logging.LogUtils;
+ import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import java.util.Collection;
+ import java.util.Map;
  import java.util.Set;
  import java.util.stream.Collectors;
  import javax.annotation.Nullable;
@@ -188,13 +176,13 @@ index 69992ebc999ea3ff9e47e4e049bcc514c01150ca..2f235d0ab6abed83ffee1c77feede355
  import net.minecraft.Util;
  import net.minecraft.core.Holder;
  import net.minecraft.core.registries.BuiltInRegistries;
-@@ -20,8 +22,8 @@ import org.slf4j.Logger;
+@@ -20,8 +21,8 @@ import org.slf4j.Logger;
  public class AttributeMap {
      private static final Logger LOGGER = LogUtils.getLogger();
      private final Map<Holder<Attribute>, AttributeInstance> attributes = new Object2ObjectOpenHashMap<>();
 -    private final Set<AttributeInstance> attributesToSync = new ObjectOpenHashSet<>();
 -    private final Set<AttributeInstance> attributesToUpdate = new ObjectOpenHashSet<>();
-+    private final Set<AttributeInstance> attributesToSync = new ReferenceOpenHashSet<>(1);   // CubePie - lithium: collections
++    private final Set<AttributeInstance> attributesToSync = new ReferenceOpenHashSet<>(1); // CubePie - lithium: collections
 +    private final Set<AttributeInstance> attributesToUpdate = new ReferenceOpenHashSet<>(1); // CubePie - lithium: collections
      private final AttributeSupplier supplier;
  
@@ -222,7 +210,7 @@ index 89e327bc3a45879fe68887c7aadb077f31a770eb..2f7c5fad190d847dfb08b64e1f71e581
          // Paper start - Perf: Use array for gamerule storage
          int arraySize = rules.keySet().stream().mapToInt(key -> key.gameRuleIndex).max().orElse(-1) + 1;
 diff --git a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
-index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..87ea38ba42460fc233857338c95ba7451afa9c7c 100644
+index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..9eb44bd479a47948c0d701f9ccfe398ed1a490e5 100644
 --- a/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
 +++ b/src/main/java/net/minecraft/world/level/biome/MobSpawnSettings.java
 @@ -51,13 +51,21 @@ public class MobSpawnSettings {
@@ -244,7 +232,7 @@ index cb7465ed9bdebe1b31f02d11725e75ff8b44ca66..87ea38ba42460fc233857338c95ba745
 +        Map<MobCategory, WeightedRandomList<MobSpawnSettings.SpawnerData>> spawns = Maps.newEnumMap(MobCategory.class);
 +        spawns.putAll(spawners);
 +        this.spawners = spawns;
-+        // CubePie end - lithium: collections
++        // CubePie end
          this.mobSpawnCosts = ImmutableMap.copyOf(spawnCosts);
      }
  

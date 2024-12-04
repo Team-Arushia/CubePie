@@ -1,0 +1,87 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Wed, 4 Dec 2024 17:43:35 +0900
+Subject: [PATCH] Patina: remove TickTask
+
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index dd227dd4fc3858b0502f0fb8a71f74b46ab31478..a96e960890fb53d813ee2c722b980b1416e14208 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -199,7 +199,7 @@ import org.bukkit.event.server.ServerLoadEvent;
+ 
+ import co.aikar.timings.MinecraftTimings; // Paper
+ 
+-public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTask> implements ServerInfo, ChunkIOErrorReporter, CommandSource, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.server.ChunkSystemMinecraftServer { // Paper - rewrite chunk system
++public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnable> implements ServerInfo, ChunkIOErrorReporter, CommandSource, AutoCloseable, ca.spottedleaf.moonrise.patches.chunk_system.server.ChunkSystemMinecraftServer { // Paper - rewrite chunk system
+ 
+     private static MinecraftServer SERVER; // Paper
+     public static final Logger LOGGER = LogUtils.getLogger();
+@@ -1489,19 +1489,21 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     @Override
+-    public TickTask wrapRunnable(Runnable runnable) {
++    public Runnable wrapRunnable(Runnable runnable) { // Patina
+         // Paper start - anything that does try to post to main during watchdog crash, run on watchdog
+         if (this.hasStopped && Thread.currentThread().equals(shutdownThread)) {
+             runnable.run();
+             runnable = () -> {};
+         }
+         // Paper end
+-        return new TickTask(this.tickCount, runnable);
++        return runnable;
+     }
+ 
++    /* // Patina
+     protected boolean shouldRun(TickTask ticktask) {
+         return ticktask.getTick() + 3 < this.tickCount || this.haveTime();
+     }
++     */
+ 
+     @Override
+     public boolean pollTask() {
+@@ -1533,10 +1535,12 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+     }
+ 
++    /* // Patina
+     public void doRunTask(TickTask ticktask) { // CraftBukkit - decompile error
+         this.getProfiler().incrementCounter("runTask");
+         super.doRunTask(ticktask);
+     }
++     */
+ 
+     private Optional<ServerStatus.Favicon> loadStatusIcon() {
+         Optional<Path> optional = Optional.of(this.getFile("server-icon.png")).filter((path) -> {
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index dcb5651d1d9b10b40430fb2f713beedf68336704..36434c1ab39a3e48a3a2a275d1082ae13144ef78 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -714,10 +714,12 @@ public class ServerChunkCache extends ChunkSource implements ca.spottedleaf.moon
+             return runnable;
+         }
+ 
++        /* // Patina
+         @Override
+         protected boolean shouldRun(Runnable task) {
+             return true;
+         }
++         */
+ 
+         @Override
+         protected boolean scheduleExecutables() {
+diff --git a/src/main/java/net/minecraft/util/thread/BlockableEventLoop.java b/src/main/java/net/minecraft/util/thread/BlockableEventLoop.java
+index 0c0a5b8364156b332f011ea855ce44bdac4057a9..d2f53e1bdcfb7a295b442d2bf131f1ac620cb413 100644
+--- a/src/main/java/net/minecraft/util/thread/BlockableEventLoop.java
++++ b/src/main/java/net/minecraft/util/thread/BlockableEventLoop.java
+@@ -33,7 +33,9 @@ public abstract class BlockableEventLoop<R extends Runnable> implements Profiler
+ 
+     protected abstract R wrapRunnable(Runnable runnable);
+ 
++    /* // Patina
+     protected abstract boolean shouldRun(R task);
++     */
+ 
+     public boolean isSameThread() {
+         return Thread.currentThread() == this.getRunningThread();

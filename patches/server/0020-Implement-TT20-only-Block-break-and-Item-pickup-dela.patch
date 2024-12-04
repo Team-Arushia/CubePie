@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Wed, 4 Dec 2024 19:47:42 +0900
+Subject: [PATCH] Implement TT20(only Block break and Item pickup delay
+ patches)
+
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index a96e960890fb53d813ee2c722b980b1416e14208..f708dd22b806f9d69e31b1d66153592980809447 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -150,6 +150,7 @@ import net.minecraft.world.level.levelgen.WorldOptions;
+ import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+ import net.minecraft.world.level.storage.WorldData;
++import net.snackbag.tt20.util.TPSCalculator;
+ import org.slf4j.Logger;
+ 
+ // CraftBukkit start
+@@ -320,6 +321,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnab
+     public final io.papermc.paper.configuration.PaperConfigurations paperConfigurations; // Paper - add paper configuration files
+     public final com.arushia.cubepie.configuration.CubePieConfiguration cubePieConfiguration; // CubePie - add cubepie configuration
+     public boolean isIteratingOverLevels = false; // Paper - Throw exception on world create while being ticked
++    public final net.snackbag.tt20.util.TPSCalculator tpsCalculator = new TPSCalculator(); // CubePie - Implement TT20
+ 
+     public volatile Thread shutdownThread; // Paper
+     public volatile boolean abnormalExit = false; // Paper
+@@ -1597,6 +1599,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnab
+         // Paper end
+         this.server.spark.tickStart(); // Paper - spark
+         new com.destroystokyo.paper.event.server.ServerTickStartEvent(this.tickCount+1).callEvent(); // Paper - Server Tick Events
++        tpsCalculator.onTick(); // CubePie - Implement TT20
+ 
+         ++this.tickCount;
+         this.tickRateManager.tick();
+diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+index 6ceb5e4bb835da5fa4ec69d2b2ebe7c93779490c..3d26614f74b9b94e6d5c6805aaf55a4e345c542b 100644
+--- a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+@@ -145,6 +145,17 @@ public class ItemEntity extends Entity implements TraceableEntity {
+ 
+     @Override
+     public void tick() {
++        // CubePie start - Implement TT20
++        if(MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("tt20.enabled")
++                && MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("tt20.pickup-acceleration") && !level().isClientSide()){
++            if(this.pickupDelay != 0 && this.pickupDelay - MinecraftServer.getServer().tpsCalculator.applicableMissedTicks() <= 0){
++                this.pickupDelay = 0;
++            } else {
++                this.pickupDelay -= MinecraftServer.getServer().tpsCalculator.applicableMissedTicks();
++            }
++        }
++        // CubePie end
++
+         if (this.getItem().isEmpty()) {
+             this.discard(EntityRemoveEvent.Cause.DESPAWN); // CraftBukkit - add Bukkit remove cause
+         } else {
+diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+index d0109633e8bdf109cfc9178963d7b6cf92f8b189..d3b68f4d87eee6a4e8b9d979af3eb829fe448720 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -23,6 +23,7 @@ import net.minecraft.core.registries.Registries;
+ import net.minecraft.network.protocol.game.DebugPackets;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.resources.ResourceLocation;
++import net.minecraft.server.MinecraftServer;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.tags.TagKey;
+@@ -81,6 +82,7 @@ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
++import net.snackbag.tt20.util.TPSCalculator;
+ 
+ public abstract class BlockBehaviour implements FeatureElement {
+ 
+@@ -344,6 +346,12 @@ public abstract class BlockBehaviour implements FeatureElement {
+         } else {
+             int i = player.hasCorrectToolForDrops(state) ? 30 : 100;
+ 
++            // CubePie start - Implement TT20
++            if(MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("tt20.enabled")
++                    && MinecraftServer.getServer().cubePieConfiguration.getConfig().getBoolean("tt20.block-breaking-acceleration")){
++                return player.getDestroySpeed(state) / f / (float) i * TPSCalculator.MAX_TPS / (float) MinecraftServer.getServer().tpsCalculator.getMostAccurateTPS();
++            }
++            // CubePie end
+             return player.getDestroySpeed(state) / f / (float) i;
+         }
+     }
+diff --git a/src/main/java/net/snackbag/tt20/util/TPSCalculator.java b/src/main/java/net/snackbag/tt20/util/TPSCalculator.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..753aac0404e2a942c5d1918e129833887174e445
+--- /dev/null
++++ b/src/main/java/net/snackbag/tt20/util/TPSCalculator.java
+@@ -0,0 +1,85 @@
++package net.snackbag.tt20.util;
++
++import java.util.List;
++import java.util.concurrent.CopyOnWriteArrayList;
++
++public class TPSCalculator {
++    public Long lastTick;
++    public Long currentTick;
++    private double allMissedTicks = 0;
++    private final List<Double> tpsHistory = new CopyOnWriteArrayList<>();
++    private static final int historyLimit = 40;
++
++    public static final int MAX_TPS = 20;
++    public static final int FULL_TICK = 50;
++
++    public TPSCalculator() {
++        //ServerTickEvents.START_SERVER_TICK.register(server -> onTick());
++    }
++
++    public void onTick() {
++        if (currentTick != null) {
++            lastTick = currentTick;
++        }
++
++        currentTick = System.currentTimeMillis();
++        addToHistory(getTPS());
++        clearMissedTicks();
++        missedTick();
++    }
++
++    private void addToHistory(double tps) {
++        if (tpsHistory.size() >= historyLimit) {
++            tpsHistory.removeFirst();
++        }
++
++        tpsHistory.add(tps);
++    }
++
++    public long getMSPT() {
++        return currentTick - lastTick;
++    }
++
++    public double getAverageTPS() {
++        return tpsHistory.stream()
++            .mapToDouble(Double::doubleValue)
++            .average()
++            .orElse(0.1);
++    }
++
++    public double getTPS() {
++        if (lastTick == null) return -1;
++        if (getMSPT() <= 0) return 0.1;
++
++        double tps = 1000 / (double) getMSPT();
++        return tps > MAX_TPS ? MAX_TPS : tps;
++    }
++
++    public void missedTick() {
++        if (lastTick == null) return;
++
++        long mspt = getMSPT() <= 0 ? 50 : getMSPT();
++        double missedTicks = (mspt / (double) FULL_TICK) - 1;
++        allMissedTicks += missedTicks <= 0 ? 0 : missedTicks;
++    }
++
++    public double getMostAccurateTPS() {
++        return Math.min(getTPS(), getAverageTPS());
++    }
++
++    public double getAllMissedTicks() {
++        return allMissedTicks;
++    }
++
++    public int applicableMissedTicks() {
++        return (int) Math.floor(allMissedTicks);
++    }
++
++    public void clearMissedTicks() {
++        allMissedTicks -= applicableMissedTicks();
++    }
++
++    public void resetMissedTicks() {
++        allMissedTicks = 0;
++    }
++}
+diff --git a/src/main/java/net/snackbag/tt20/util/TPSUtil.java b/src/main/java/net/snackbag/tt20/util/TPSUtil.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..90d8b5c72a59ba18f83c9c69b3ba86148844acc2
+--- /dev/null
++++ b/src/main/java/net/snackbag/tt20/util/TPSUtil.java
+@@ -0,0 +1,55 @@
++package net.snackbag.tt20.util;
++
++import net.minecraft.server.MinecraftServer;
++
++import java.text.DecimalFormat;
++import java.text.DecimalFormatSymbols;
++import java.util.Locale;
++
++public class TPSUtil {
++    private static final DecimalFormat df = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.ROOT));
++    private static final DecimalFormat dfMissedTicks = new DecimalFormat("0.0000", DecimalFormatSymbols.getInstance(Locale.ROOT));
++
++    public static String colorizeTPS(double tps, boolean format) {
++        if (tps > 15) {
++            return "§a" + (format ? formatTPS(tps) : tps);
++        } else if (tps > 10) {
++            return "§e" + (format ? formatTPS(tps) : tps);
++        } else {
++            return "§c" + (format ? formatTPS(tps) : tps);
++        }
++    }
++
++    public static String formatTPS(double tps) {
++        return df.format(tps);
++    }
++
++    public static String formatMissedTicks(double missedTicks) {
++        return dfMissedTicks.format(missedTicks);
++    }
++
++    public static float tt20(float ticks, boolean limitZero) {
++        float newTicks = (float) rawTT20(ticks);
++
++        if (limitZero) return newTicks > 0 ? newTicks : 1;
++        else return newTicks;
++    }
++
++    public static int tt20(int ticks, boolean limitZero) {
++        int newTicks = (int) Math.ceil(rawTT20(ticks));
++
++        if (limitZero) return newTicks > 0 ? newTicks : 1;
++        else return newTicks;
++    }
++
++    public static double tt20(double ticks, boolean limitZero) {
++        double newTicks = (double) rawTT20(ticks);
++
++        if (limitZero) return newTicks > 0 ? newTicks : 1;
++        else return newTicks;
++    }
++
++    public static double rawTT20(double ticks) {
++        return ticks == 0 ? 0 : ticks * MinecraftServer.getServer().tpsCalculator.getMostAccurateTPS() / TPSCalculator.MAX_TPS;
++    }
++}
+diff --git a/src/main/resources/configurations/cubepie.yml b/src/main/resources/configurations/cubepie.yml
+index 42000f5fbcc521cc045d5e5f7c0d1e1b9b59eeef..bddf6c0cbda28efbc4edc0d7b318a21f13771a60 100644
+--- a/src/main/resources/configurations/cubepie.yml
++++ b/src/main/resources/configurations/cubepie.yml
+@@ -1,3 +1,8 @@
+ no-chat-reports:
+   enabled: true
+-  convert-to-game-message: true
+\ No newline at end of file
++  convert-to-game-message: true
++
++tt20:
++  enabled: true
++  pickup-acceleration: true
++  block-breaking-acceleration: true
+\ No newline at end of file

@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Wed, 4 Dec 2024 18:07:49 +0900
+Subject: [PATCH] lithium: fast elytra check
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 04fe6baa2ba124086f3e70f3e3ef4eac7ae5bf3c..d3687308e6aaaee530e5ca9fae50ff5c48aa9b45 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -3582,6 +3582,11 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     }
+ 
+     private void updateFallFlying() {
++        // CubePie start - lithium: fast elytra check
++        if(!this.isFallFlying() && this.fallFlyTicks == 0){
++            return;
++        }
++        // CubePie end
+         boolean flag = this.getSharedFlag(7);
+ 
+         if (flag && !this.onGround() && !this.isPassenger() && !this.hasEffect(MobEffects.LEVITATION)) {

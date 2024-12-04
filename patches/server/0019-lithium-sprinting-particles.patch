@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: woobeen Jeon <woobeen0516@gmail.com>
+Date: Wed, 4 Dec 2024 18:15:40 +0900
+Subject: [PATCH] lithium: sprinting particles
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b09b23c0643798500063ee59f28dcb707ef41075..bd163f7a761b4cfc0668b936b6e662416d6ee6ca 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -872,7 +872,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+         this.xRotO = this.getXRot();
+         this.yRotO = this.getYRot();
+         if (this instanceof ServerPlayer) this.handlePortal(); // CraftBukkit - // Moved up to postTick
+-        if (this.canSpawnSprintParticle()) {
++        if (this.level().isClientSide() && this.canSpawnSprintParticle()) { // CubePie - lithium: sprinting particles
+             this.spawnSprintParticle();
+         }
+ 
